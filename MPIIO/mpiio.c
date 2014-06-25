@@ -17,6 +17,9 @@
 // Buffer size (not foolproof)
 #define BUFSIZE 256
 
+// Define a limit for displaying n values at most
+#define PRINT_LIMIT 10
+
 // overriden function
 int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datatype, MPI_Status *status)
 {
@@ -43,26 +46,34 @@ int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datat
     {
         char * s = calloc(BUFSIZE * count, sizeof(char));
         strcat(s, "{");
-        for(i = 0; i < count; i++)
+        for(i = 0; i < count && i < PRINT_LIMIT; i++)
         {
             sprintf(b, " %d ", ((int *)buf)[i]); 
             strcat(s, b);
         }
+        if(i < count)
+        {
+            strcat(s, " ... ");
+        }
         strcat(s, "}");
-        printf("P%d: [int *] %s\n", rank, s);
+        printf("P%d: [int * : %d] %s\n", rank, count, s);
         free(s);
     }
     else if(datatype == MPI_FLOAT)
     {
         char * s = calloc(BUFSIZE * count, sizeof(char));
         strcat(s, "{");
-        for(i = 0; i < count; i++)
+        for(i = 0; i < count && i < PRINT_LIMIT; i++)
         {
             sprintf(b, " %f ", ((float *)buf)[i]); 
             strcat(s, b);
         }
+        if(i < count)
+        {
+            strcat(s, " ... ");
+        }
         strcat(s, "}");
-        printf("P%d: [float *] %s\n", rank, s);
+        printf("P%d: [float * : %d] %s\n", rank, count, s);
         free(s);
     }
     else
