@@ -12,6 +12,8 @@
 #include <mpi.h>
 #include <dlfcn.h>
 
+#include "config.h"
+
 #define _GNU_SOURCE 1
 
 // Buffer size (not foolproof)
@@ -20,6 +22,43 @@
 // Define a limit for displaying n values at most
 #define PRINT_LIMIT 10
 
+#if OVERRIDE_FILE_OPEN
+int MPI_File_open(MPI_Comm comm, char *filename, int amode, MPI_Info info, MPI_File *fh)
+{
+    int rank, size;
+    char b1[BUFSIZE];
+    char b2[BUFSIZE];
+    static int (*f)();
+
+    memset(b1, 0, BUFSIZE);
+    memset(b2, 0, BUFSIZE);
+
+    /* get the new symbol corresponding to the function with the same name */
+    if(!f)
+        f = (int(*)()) dlsym(RTLD_NEXT, "MPI_File_open");
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    sprintf(b1, "global %d/%d ", rank, size);
+    strcat(b2, b1);
+
+    MPI_Comm_rank(comm, &rank);
+    MPI_Comm_size(comm, &size);
+
+    sprintf(b1, "local %d/%d %s %d", rank, size, filename, amode);
+    strcat(b2, b1);
+
+    printf("%s\n", b2);
+
+    int res = f(comm, filename, amode, info, fh);
+
+    /* call the original MPI function */
+    return res;
+}
+#endif
+
+#if OVERRIDE_FILE_WRITE_ORDERED
 // overriden function
 int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datatype, MPI_Status *status)
 {
@@ -44,36 +83,58 @@ int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datat
     }
     else if(datatype == MPI_INT)
     {
+        int min, max, val;
         char * s = calloc(BUFSIZE * count, sizeof(char));
         strcat(s, "{");
-        for(i = 0; i < count && i < PRINT_LIMIT; i++)
+
+        min = max = ((int *)buf)[0];
+        for(i = 0; i < count; i++)
         {
-            sprintf(b, " %d ", ((int *)buf)[i]); 
-            strcat(s, b);
+            val = ((int *)buf)[i];
+            /* min/max */
+            if(val < min) { min = val; }
+            if(val > max) { max = val; }
+
+            /* Limit printed output */
+            if(i < PRINT_LIMIT)
+            {
+                sprintf(b, " %d ", val); 
+                strcat(s, b);
+            }
         }
-        if(i < count)
+        if(PRINT_LIMIT < count)
         {
             strcat(s, " ... ");
         }
         strcat(s, "}");
-        printf("P%d: [int * : %d] %s\n", rank, count, s);
+        printf("P%d: [int * : %d (%d, %d) ] %s\n", rank, count, min, max, s);
         free(s);
     }
     else if(datatype == MPI_FLOAT)
     {
+        float min, max, val;
         char * s = calloc(BUFSIZE * count, sizeof(char));
         strcat(s, "{");
-        for(i = 0; i < count && i < PRINT_LIMIT; i++)
+        for(i = 0; i < count; i++)
         {
-            sprintf(b, " %f ", ((float *)buf)[i]); 
-            strcat(s, b);
+            val = ((float *)buf)[i];
+            /* min/max */
+            if(val < min) { min = val; }
+            if(val > max) { max = val; }
+
+            /* Limit printed output */
+            if(i < PRINT_LIMIT)
+            {
+                sprintf(b, " %f ", val); 
+                strcat(s, b);
+            }
         }
-        if(i < count)
+        if(PRINT_LIMIT < count)
         {
             strcat(s, " ... ");
         }
         strcat(s, "}");
-        printf("P%d: [float * : %d] %s\n", rank, count, s);
+        printf("P%d: [float * : %d (%f, %f) ] %s\n", rank, count, min, max, s);
         free(s);
     }
     else
@@ -81,6 +142,11 @@ int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datat
         printf("Unknown MPI datatype\n");
     }
 
+    //printf("P%d: Begin Call\n", rank);
+    int res = f(fh, buf, count, datatype, status);
+    //printf("P%d %d: End Call\n", rank, count);
+
     /* call the original MPI function */
-    return (f(fh, buf, count, datatype, status));
+    return res;
 }
+#endif
