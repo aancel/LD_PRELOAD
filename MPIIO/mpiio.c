@@ -22,6 +22,46 @@
 // Define a limit for displaying n values at most
 #define PRINT_LIMIT 10
 
+typedef struct
+{
+    MPI_Datatype type;
+    char * name;
+} TrMPITypeName;
+
+TrMPITypeName trMPITypeName[] = 
+{ 
+{ MPI_PACKED, "PACKED" },
+{ MPI_CHAR, "CHAR" },  
+{ MPI_UNSIGNED_CHAR, "UNSIGNED CHAR" },  
+{ MPI_SHORT, "SHORT" },  
+{ MPI_UNSIGNED_SHORT, "UNSIGNED SHORT" },  
+{ MPI_INT, "INT" },  
+{ MPI_LONG, "LONG" },  
+{ MPI_UNSIGNED, "UNSIGNED" },  
+{ MPI_UNSIGNED_LONG, "UNSIGNED LONG" },  
+{ MPI_INT32_T, "INT32" },  
+{ MPI_INT64_T, "INT64" },  
+{ MPI_FLOAT, "FLOAT" }, 
+{ MPI_DOUBLE, "DOUBLE" }, 
+{ MPI_LONG_DOUBLE, "LONG_DOUBLE" }, 
+{ 0, NULL } 
+}; 
+
+/* translate MPI type name to string */
+char * translateMPIType( MPI_Datatype type )
+{
+    int i = 0;
+    while(trMPITypeName[i].name) 
+    {
+        if(trMPITypeName[i].type == type)
+        {
+            return trMPITypeName[i].name;
+        }
+        i++;
+    }
+    return NULL;
+}
+
 #if OVERRIDE_FILE_OPEN
 int MPI_File_open(MPI_Comm comm, char *filename, int amode, MPI_Info info, MPI_File *fh)
 {
@@ -66,6 +106,11 @@ int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datat
     char b[BUFSIZE];
     static int (*f)();
 
+    static unsigned int callIdx = 0;
+
+    /* get a string containing the MPI type */
+    char * tname = translateMPIType(datatype);
+
     /* get the new symbol corresponding to the function with the same name */
     if(!f)
         f = (int(*)()) dlsym(RTLD_NEXT, "MPI_File_write_ordered");
@@ -78,7 +123,7 @@ int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datat
     if(datatype == MPI_CHAR)
     {
         char * s = strndup(buf, count);
-        printf("P%d: [char *] %s\n", rank, s);
+        printf("P%d/%d: [%s;%d] %s\n", rank, callIdx, tname, count, s);
         free(s);
     }
     else if(datatype == MPI_INT)
@@ -107,7 +152,7 @@ int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datat
             strcat(s, " ... ");
         }
         strcat(s, "}");
-        printf("P%d: [int * : %d (%d, %d) ] %s\n", rank, count, min, max, s);
+        printf("P%d/%d: [%s: %d (%d, %d) ] %s\n", rank, callIdx, tname, count, min, max, s);
         free(s);
     }
     else if(datatype == MPI_FLOAT)
@@ -134,17 +179,24 @@ int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datat
             strcat(s, " ... ");
         }
         strcat(s, "}");
-        printf("P%d: [float * : %d (%f, %f) ] %s\n", rank, count, min, max, s);
+        printf("P%d/%d: [%s : %d (%f, %f) ] %s\n", rank, callIdx, tname, count, min, max, s);
         free(s);
+    }
+    else if(tname != NULL)
+    {
+        printf("P%d/%d: [%s : %d ] No implementation to print this data type\n", rank, callIdx, tname, count);
     }
     else
     {
-        printf("Unknown MPI datatype\n");
+        printf("P%d/%d: Unknown MPI datatype (%d)\n", rank, callIdx, datatype);
     }
 
     //printf("P%d: Begin Call\n", rank);
     int res = f(fh, buf, count, datatype, status);
     //printf("P%d %d: End Call\n", rank, count);
+    
+    // increment the call index
+    callIdx++;
 
     /* call the original MPI function */
     return res;
