@@ -126,7 +126,7 @@ int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datat
         printf("P%d/%d: [%s;%d] %s\n", rank, callIdx, tname, count, s);
         free(s);
     }
-    else if(datatype == MPI_INT)
+    else if(datatype == MPI_INT || datatype == MPI_INT32_T)
     {
         int min, max, val;
         char * s = calloc(BUFSIZE * count, sizeof(char));
