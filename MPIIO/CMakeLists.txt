@@ -4,7 +4,9 @@ find_package(MPI REQUIRED)
 include_directories(${MPI_C_INCLUDE_PATH})
 
 option(OVERRIDE_FILE_OPEN 0)
+option(OVERRIDE_FILE_READ_ALL 0)
 option(OVERRIDE_FILE_WRITE_ORDERED 0)
+option(ENABLE_TIMING 0)
 
 configure_file("${CMAKE_SOURCE_DIR}/config.h.in" "${CMAKE_SOURCE_DIR}/config.h")
 

@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <mpi.h>
 #include <dlfcn.h>
 
@@ -98,6 +99,48 @@ int MPI_File_open(MPI_Comm comm, char *filename, int amode, MPI_Info info, MPI_F
 }
 #endif
 
+#if OVERRIDE_FILE_READ_ALL
+int MPI_File_read_all(MPI_File fh, void *buf, int count, MPI_Datatype datatype, MPI_Status *status)
+{
+    int i;
+    char b[BUFSIZE];
+    static int (*f)();
+
+    static unsigned int callIdx = 0;
+
+    /* get a string containing the MPI type */
+    char * tname = translateMPIType(datatype);
+
+    /* get the new symbol corresponding to the function with the same name */
+    if(!f)
+        f = (int(*)()) dlsym(RTLD_NEXT, "MPI_File_read_all");
+
+    /* Gather MPI data about current rank for display */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+#if ENABLE_TIMING
+    struct timespec ts1;
+    struct timespec ts2;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts1);
+#endif
+
+    int res = f(fh, buf, count, datatype, status);
+
+#if ENABLE_TIMING
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts2);
+    double t1 = (double)(ts1.tv_sec) + (double)(ts1.tv_nsec) / (1000000000.0);                                                                                                        double t2 = (double)(ts2.tv_sec) + (double)(ts2.tv_nsec) / (1000000000.0);
+    printf("P%d/%d: MPI_File_read_all (lasted: %fs)\n", rank, callIdx, t2 - t1);
+#endif
+    
+    // increment the call index
+    callIdx++;
+
+    /* call the original MPI function */
+    return res;
+}
+#endif
+
 #if OVERRIDE_FILE_WRITE_ORDERED
 // overriden function
 int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datatype, MPI_Status *status)
@@ -126,7 +169,7 @@ int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datat
         printf("P%d/%d: [%s;%d] %s\n", rank, callIdx, tname, count, s);
         free(s);
     }
-    else if(datatype == MPI_INT || datatype == MPI_INT32_T)
+    else if(datatype == MPI_INT || datatype == MPI_INT32_T || datatype == MPI_INT64_T)
     {
         int min, max, val;
         char * s = calloc(BUFSIZE * count, sizeof(char));
@@ -192,7 +235,20 @@ int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datat
     }
 
     //printf("P%d: Begin Call\n", rank);
+#if ENABLE_TIMING
+    struct timespec ts1;
+    struct timespec ts2;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts1);
+#endif
+
     int res = f(fh, buf, count, datatype, status);
+
+#if ENABLE_TIMING
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts2);
+    double t1 = (double)(ts1.tv_sec) + (double)(ts1.tv_nsec) / (1000000000.0);                                                                                                        double t2 = (double)(ts2.tv_sec) + (double)(ts2.tv_nsec) / (1000000000.0);
+    printf("P%d/%d: Call lasted: %fs\n", rank, callIdx, t2 - t1);
+#endif
+    
     //printf("P%d %d: End Call\n", rank, count);
     
     // increment the call index
