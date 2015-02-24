@@ -63,6 +63,24 @@ char * translateMPIType( MPI_Datatype type )
     return NULL;
 }
 
+#if OVERRIDE_INIT
+int MPI_Init(int *argc, char ***argv)
+{
+    static int (*f)();
+
+    /* get the new symbol corresponding to the function with the same name */
+    if(!f)
+        f = (int(*)()) dlsym(RTLD_NEXT, "MPI_Init");
+
+    printf("Calling MPI_Init\n");
+
+    int res = f(argc, argv);
+
+    /* call the original MPI function */
+    return res;
+}
+#endif
+
 #if OVERRIDE_FILE_OPEN
 int MPI_File_open(MPI_Comm comm, char *filename, int amode, MPI_Info info, MPI_File *fh)
 {
