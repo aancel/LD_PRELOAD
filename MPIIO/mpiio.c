@@ -72,7 +72,25 @@ int MPI_Init(int *argc, char ***argv)
     if(!f)
         f = (int(*)()) dlsym(RTLD_NEXT, "MPI_Init");
 
-    printf("Calling MPI_Init\n");
+    printf("[MPI] Calling MPI_Init\n");
+
+    int res = f(argc, argv);
+
+    /* call the original MPI function */
+    return res;
+}
+#endif
+
+#if OVERRIDE_FINALIZE
+int MPI_Finalize()
+{
+    static int (*f)();
+
+    /* get the new symbol corresponding to the function with the same name */
+    if(!f)
+        f = (int(*)()) dlsym(RTLD_NEXT, "MPI_Finalize");
+
+    printf("[MPI] Calling MPI_Finalize\n");
 
     int res = f(argc, argv);
 
@@ -82,12 +100,14 @@ int MPI_Init(int *argc, char ***argv)
 #endif
 
 #if OVERRIDE_FILE_OPEN
-int MPI_File_open(MPI_Comm comm, char *filename, int amode, MPI_Info info, MPI_File *fh)
+int MPI_File_open(MPI_Comm comm, const char *filename, int amode, MPI_Info info, MPI_File *fh)
 {
     int rank, size;
     char b1[BUFSIZE];
     char b2[BUFSIZE];
     static int (*f)();
+
+    static unsigned int callIdx = 0;
 
     memset(b1, 0, BUFSIZE);
     memset(b2, 0, BUFSIZE);
@@ -99,7 +119,7 @@ int MPI_File_open(MPI_Comm comm, char *filename, int amode, MPI_Info info, MPI_F
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    sprintf(b1, "global %d/%d ", rank, size);
+    sprintf(b1, "[MPI_File_open:id_%d] global %d/%d ", callIdx, rank, size);
     strcat(b2, b1);
 
     MPI_Comm_rank(comm, &rank);
@@ -111,6 +131,42 @@ int MPI_File_open(MPI_Comm comm, char *filename, int amode, MPI_Info info, MPI_F
     printf("%s\n", b2);
 
     int res = f(comm, filename, amode, info, fh);
+
+    callIdx++;
+
+    /* call the original MPI function */
+    return res;
+}
+#endif
+
+#if OVERRIDE_FILE_CLOSE
+int MPI_File_close(MPI_File * fh)
+{
+    int rank, size;
+    char b1[BUFSIZE];
+    char b2[BUFSIZE];
+    static int (*f)();
+
+    static unsigned int callIdx = 0;
+
+    memset(b1, 0, BUFSIZE);
+    memset(b2, 0, BUFSIZE);
+
+    /* get the new symbol corresponding to the function with the same name */
+    if(!f)
+        f = (int(*)()) dlsym(RTLD_NEXT, "MPI_File_close");
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    sprintf(b1, "[MPI_File_close:id_%d] global %d/%d ", callIdx, rank, size);
+    strcat(b2, b1);
+
+    printf("%s\n", b2);
+
+    int res = f(fh);
+
+    callIdx++;
 
     /* call the original MPI function */
     return res;
@@ -148,7 +204,7 @@ int MPI_File_read_all(MPI_File fh, void *buf, int count, MPI_Datatype datatype, 
 #if ENABLE_TIMING
     clock_gettime(CLOCK_MONOTONIC_RAW, &ts2);
     double t1 = (double)(ts1.tv_sec) + (double)(ts1.tv_nsec) / (1000000000.0);                                                                                                        double t2 = (double)(ts2.tv_sec) + (double)(ts2.tv_nsec) / (1000000000.0);
-    printf("P%d/%d: MPI_File_read_all (lasted: %fs)\n", rank, callIdx, t2 - t1);
+    printf("[MPIIO] P%d/%d: MPI_File_read_all (lasted: %fs)\n", rank, callIdx, t2 - t1);
 #endif
     
     // increment the call index
@@ -161,7 +217,7 @@ int MPI_File_read_all(MPI_File fh, void *buf, int count, MPI_Datatype datatype, 
 
 #if OVERRIDE_FILE_WRITE_ORDERED
 // overriden function
-int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datatype, MPI_Status *status)
+int MPI_File_write_ordered(MPI_File fh, const void *buf, int count, MPI_Datatype datatype, MPI_Status *status)
 {
     int i;
     char b[BUFSIZE];
@@ -184,7 +240,7 @@ int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datat
     if(datatype == MPI_CHAR)
     {
         char * s = strndup(buf, count);
-        printf("P%d/%d: [%s;%d] %s\n", rank, callIdx, tname, count, s);
+        printf("[MPIIO] P%d/%d: [%s;%d] %s\n", rank, callIdx, tname, count, s);
         free(s);
     }
     else if(datatype == MPI_INT || datatype == MPI_INT32_T || datatype == MPI_INT64_T)
@@ -213,7 +269,7 @@ int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datat
             strcat(s, " ... ");
         }
         strcat(s, "}");
-        printf("P%d/%d: [%s: %d (%d, %d) ] %s\n", rank, callIdx, tname, count, min, max, s);
+        printf("[MPIIO] P%d/%d: [%s: %d (%d, %d) ] %s\n", rank, callIdx, tname, count, min, max, s);
         free(s);
     }
     else if(datatype == MPI_FLOAT)
@@ -240,16 +296,16 @@ int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datat
             strcat(s, " ... ");
         }
         strcat(s, "}");
-        printf("P%d/%d: [%s : %d (%f, %f) ] %s\n", rank, callIdx, tname, count, min, max, s);
+        printf("[MPIIO] P%d/%d: [%s : %d (%f, %f) ] %s\n", rank, callIdx, tname, count, min, max, s);
         free(s);
     }
     else if(tname != NULL)
     {
-        printf("P%d/%d: [%s : %d ] No implementation to print this data type\n", rank, callIdx, tname, count);
+        printf("[MPIIO] P%d/%d: [%s : %d ] No implementation to print this data type\n", rank, callIdx, tname, count);
     }
     else
     {
-        printf("P%d/%d: Unknown MPI datatype (%d)\n", rank, callIdx, datatype);
+        printf("[MPIIO] P%d/%d: Unknown MPI datatype (%d)\n", rank, callIdx, datatype);
     }
 
     //printf("P%d: Begin Call\n", rank);
@@ -264,7 +320,7 @@ int MPI_File_write_ordered(MPI_File fh, void *buf, int count, MPI_Datatype datat
 #if ENABLE_TIMING
     clock_gettime(CLOCK_MONOTONIC_RAW, &ts2);
     double t1 = (double)(ts1.tv_sec) + (double)(ts1.tv_nsec) / (1000000000.0);                                                                                                        double t2 = (double)(ts2.tv_sec) + (double)(ts2.tv_nsec) / (1000000000.0);
-    printf("P%d/%d: Call lasted: %fs\n", rank, callIdx, t2 - t1);
+    printf("[MPIIO] P%d/%d: Call lasted: %fs\n", rank, callIdx, t2 - t1);
 #endif
     
     //printf("P%d %d: End Call\n", rank, count);
